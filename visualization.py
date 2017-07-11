@@ -9,16 +9,28 @@ from mpl_toolkits.mplot3d import Axes3D
 
 
 # Define a function to draw bounding boxes
-def draw_boxes(img, bboxes, color=(0, 0, 255), thick=2):
-    # Make a copy of the image
+def draw_boxes(img, box_centers, size=(64, 64), color=(0, 0, 255), thick=2):
     imcopy = np.copy(img)
-    # Iterate through the bounding boxes
-    for bbox in bboxes:
-        # Draw a rectangle given bbox coordinates
-        cv2.rectangle(imcopy, bbox[0], bbox[1], color, thick)
-    # Return the image copy with boxes drawn
+    for center in box_centers:
+        cv2.rectangle(
+            imcopy,
+            (center[0] - size[0] // 2, center[1] - size[1] // 2),
+            (center[0] + size[0] // 2, center[1] + size[1] // 2),
+            color=color,
+            thickness=thick)
     return imcopy
 
+
+# Draw boxes based on given labels
+def draw_labeled_bboxes(img, labels, color=(0, 0, 255), thick=2):
+    for bbox in range(1, labels[1] + 1):
+        nonzero = (labels[0] == bbox).nonzero()
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+        bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+        cv2.rectangle(img, bbox[0], bbox[1], color, thick)
+    # Return the image
+    return img
 
 # Plots image pixels in 3d color space
 def plot3d(pixels, colors_rgb, axis_labels=list("RGB"), axis_limits=[(0, 255), (0, 255), (0, 255)]):

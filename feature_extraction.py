@@ -100,7 +100,34 @@ class HogFeatureExtractor:
 
     # Calculates HOG features for all locations at once
     def get_all_features(self, image, locations):
-        features = self.hog.compute(image, (self.pix_per_cell, self.pix_per_cell), (0, 0), locations=locations)
+        if self.hog_channel == 'ALL':
+            hog_features = (
+                self.hog.compute(
+                    image[:, :, 0],
+                    (self.pix_per_cell, self.pix_per_cell),
+                    (0, 0),
+                    locations=locations).reshape([len(locations), -1]),
+                self.hog.compute(
+                    image[:, :, 1],
+                    (self.pix_per_cell, self.pix_per_cell),
+                    (0, 0),
+                    locations=locations).reshape([len(locations), -1]),
+                self.hog.compute(
+                    image[:, :, 2],
+                    (self.pix_per_cell, self.pix_per_cell),
+                    (0, 0),
+                    locations=locations).reshape([len(locations), -1]))
+            return np.hstack(hog_features)
+        else:
+            return self.hog.compute(
+                    image[:, :, self.hog_channel],
+                    (self.pix_per_cell, self.pix_per_cell),
+                    (0, 0),
+                    locations=locations).reshape([len(locations), -1])
+
+    # Calculates HOG features for image using opencv
+    def get_cv2_hog(self, image):
+        features = self.hog.compute(image, (self.pix_per_cell, self.pix_per_cell), (0, 0), locations=[(0, 0)])
         return features.flatten()
 
 
@@ -109,7 +136,7 @@ class HogFeatureExtractor:
         if self.hog_channel == 'ALL':
             hog_features = []
             for channel in range(image.shape[2]):
-                features = self.get_all_features(image[:, :, channel], [(0, 0)])
+                features = self.get_cv2_hog(image[:, :, channel])
                 '''
                 features = hog(
                     image[:, :, channel],
@@ -135,7 +162,7 @@ class HogFeatureExtractor:
                 feature_vector=True)
             return features, hog_image
         else:
-            features = self.get_all_features(image[:, :, self.hog_channel], [(0, 0)])
+            features = self.get_cv2_hog(image[:, :, self.hog_channel])
             '''
             features = hog(
                 image[:, :, self.hog_channel],

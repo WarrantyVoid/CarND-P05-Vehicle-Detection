@@ -5,6 +5,16 @@ import numpy as np
 ############ Functions ############
 
 
+def get_window_centers(windows, size=(64, 64), scale=1.0):
+    window_centers = []
+    for window in windows:
+        window_center = (
+            int(np.round((window[0] + 0.5 * size[0]) * scale)),
+            int(np.round((window[1] + 0.5 * size[1]) * scale)))
+        window_centers.append(window_center)
+    return window_centers
+
+
 # Calculates a list of search windows
 def get_search_windows(
         image_size,
@@ -52,7 +62,7 @@ def get_search_windows(
             endy = starty + xy_window[1]
 
             # Append window position to list
-            window_list.append(((startx, starty), (endx, endy)))
+            window_list.append((startx, starty))
 
     # Return the list of windows
     return window_list

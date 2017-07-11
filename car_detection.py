@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from moviepy.editor import VideoFileClip
+from scipy.ndimage.measurements import label
 import sklearn.svm as svm
 from sklearn.model_selection import GridSearchCV
 from sklearn.utils import shuffle
@@ -35,23 +36,41 @@ def extract_all_features(image_files, color_space, feature_extractors):
 # Search a given list of windows using classifier
 def search_windows(image, windows, classifier, scaler, feature_extractors):
     on_windows = []
-    for window in windows:
-        test_img = cv2.resize(image[window[0][1]:window[1][1], window[0][0]:window[1][0]], (64, 64))
-        features = extract_features(test_img, feature_extractors)
-        test_features = scaler.transform(features)
-        prediction = classifier.predict(test_features)
-        if prediction == 1:
-            on_windows.append(window)
+    features = feature_extractors[0].get_all_features(image, windows)
+    test_features = scaler.transform(features)
+    prediction = classifier.predict(test_features)
+    for i in range(len(prediction)):
+        if prediction[i] == 1:
+            on_windows.append(windows[i])
     return on_windows
 
 
 # Extacts features from a single image
-def extract_features(image, feature_extractors):
+def extract_features(image, windows, feature_extractors):
     img_features = []
     for extractor in feature_extractors:
         img_features.append(extractor.get_features(image))
     return np.concatenate(img_features)
 
+
+# Cools down heat map
+def cool_down(heatmap):
+    heatmap //= 2
+    return heatmap
+
+# Adds heat
+def add_heat(heatmap, bboxes, size=(64, 64), amount=10):
+    for bbox in bboxes:
+        p1 = (bbox[0] - size[0] // 2, bbox[1] - size[1] // 2)
+        p2 = (bbox[0] + size[0] // 2, bbox[1] + size[1] // 2)
+        heatmap[p1[1]:p2[1], p1[0]:p2[0]] += amount
+    return heatmap
+
+
+# Apply threshold
+def apply_threshold(heatmap, threshold=10):
+    heatmap[heatmap <= threshold] = 0
+    return heatmap
 
 # Loads classifier
 def load_classifier(file_name):
@@ -63,6 +82,7 @@ def load_classifier(file_name):
 # Stores classifier
 def save_classifier(file_name, classifier, scaler):
     joblib.dump((classifier, scaler), file_name, compress=9)
+
 
 ############# Classes #############
 
@@ -77,53 +97,62 @@ class ImageProcessor:
         self.classifier = classifier
         self.scaler = scaler
         self.feature_extractors = feature_extractors
+        self.levels = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+        self.level_colors = [
+            (255, 255, 255),
+            (255, 255, 0),
+            (255, 127, 0),
+            (255, 0, 0),
+            (255, 0, 255),
+            (0, 0, 255),
+            (0, 255, 255),
+            (0, 255, 0)]
         self.windows = []
-        windows0 = wins.get_search_windows(
-            image_size,
-            [int(image_size[1] * 0.3), int(image_size[1] * 0.7)],
-            [int(image_size[0] * 0.55), int(image_size[0] * 0.65)],
-            (32, 32),
-            (0.75, 0.75))
-        windows1 = wins.get_search_windows(
-            image_size,
-            [None, None],
-            [int(image_size[0] * 0.55), int(image_size[0] * 0.75)],
-            (100, 100),
-            (0.75, 0.75))
-        windows2 = wins.get_search_windows(
-            image_size,
-            [None, None],
-            [int(image_size[0] * 0.6), int(image_size[0] * 0.85)],
-            (140, 140), (0.75, 0.75))
-        windows3 = wins.get_search_windows(
-            image_size,
-            [None, None],
-            [int(image_size[0] * 0.65), int(image_size[0] * 1.0)],
-            (180, 180),
-            (0.75, 0.75))
-        self.windows.extend(windows0)
-        self.windows.extend(windows1)
-        self.windows.extend(windows2)
-        self.windows.extend(windows3)
-        #img = draw.draw_boxes(img, windows0, color=(255, 0, 255))
-        #img = draw.draw_boxes(img, windows1, color=(0, 0, 255))
-        #img = draw.draw_boxes(img, windows2, color=(255, 0, 0))
-        #img = draw.draw_boxes(img, windows3, color=(0, 255, 0))
+        self.heatmap = np.zeros(image_size, dtype=np.uint8)
+        for i in range(len(self.levels)):
+            level_size = (int(np.round(image_size[0] * self.levels[i])), int(np.round(image_size[1] * self.levels[i])))
+            level_y = int(np.round(level_size[0] * (1.0 - 0.35 - 0.1 * self.levels[i])))
+            windows = wins.get_search_windows(
+                level_size,
+                [None, None],
+                [level_y, level_y + 64],
+                (64, 64),
+                (0.875, 0.875))
+            self.windows.append(windows)
+        #for i in range(len(self.windows)):
+        #    scale = 1.0/self.levels[i]
+        #    w = wins.get_window_centers(self.windows[i], scale=scale)
+        #    img = draw.draw_boxes(img, w, size=(int(64*scale), int(64*scale)), color=self.level_colors[i], thick=2)
+        #plt.imshow(img)
+        #plt.show()
 
     # Implements the car marking pipeline
     def pipeline(self, img):
         # Require defined image size
         assert img.shape == self.image_size
 
+        self.heatmap = cool_down(self.heatmap)
+
         # Undistort
         img = cam_calibration.undistort(img)
 
         # Match cars
         match_img = feat.convert_image(img, self.color_space)
-        result_windows = search_windows(match_img, self.windows, self.classifier, self.scaler, self.feature_extractors)
+        result_windows = []
+        for i in range(len(self.levels)):
+            scaled = cv2.resize(match_img, (0, 0), fx=self.levels[i], fy=self.levels[i]) if i > 0 else match_img
+            on_windows = search_windows(scaled, self.windows[i], self.classifier, self.scaler, self.feature_extractors)
+            result_windows.append(wins.get_window_centers(on_windows, scale=1.0/self.levels[i]))
 
         # Draw
-        img = draw.draw_boxes(img, result_windows)
+        for i in range(len(self.windows)):
+            scale = 1.0 / self.levels[i]
+            img = draw.draw_boxes(img, result_windows[i], size=(int(64*scale), int(64*scale)), color=self.level_colors[i], thick=2)
+            self.heatmap = add_heat(self.heatmap, result_windows[i], size=(int(64*scale), int(64*scale)))
+
+        self.heatmap = apply_threshold(self.heatmap)
+        labels = label(self.heatmap)
+        img = draw.draw_labeled_bboxes(img, labels, thick=6)
         return img
 
 
@@ -165,6 +194,7 @@ if __name__ == '__main__':
         no_car_features = extract_all_features(no_cars, cspace, used_extractors)
         X = np.vstack((car_features, no_car_features)).astype(np.float64)
         X_scaler = StandardScaler().fit(X)
+        print(X.shape)
         X = X_scaler.transform(X)
         y = np.hstack((np.ones(len(car_features)), np.zeros(len(no_car_features))))
 
@@ -186,13 +216,15 @@ if __name__ == '__main__':
         print('For labels   : ', y_test[0:10])
         save_classifier('classifier.p', clf, X_scaler)
 
-    '''
+
     # Pipeline for single picture
+    '''
     rgb = feat.read_image('test_images/test6.jpg', color_space='RGB')
-    processor = ImageProcessor(cam_calibration, rgb.shape, cspace, clf, X_scaler, used_extractors)
+    processor = ImageProcessor(cam_calibration, rgb.shape, cspace, clf, X_scaler, used_extractors, rgb)
     t = time.time()
-    plt.imshow(processor.pipeline(rgb))
+    rgb = processor.pipeline(rgb)
     print('Prediction time: ', round(time.time() - t, 2))
+    plt.imshow(rgb)
     plt.show()
 
     '''
@@ -202,3 +234,4 @@ if __name__ == '__main__':
     new_clip = clip.fl_image(lambda frame: processor.pipeline(frame))
     new_clip_output = 'output_videos/project_video.mp4'
     new_clip.write_videofile(new_clip_output, audio=False)
+
