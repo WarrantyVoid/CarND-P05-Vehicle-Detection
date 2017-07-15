@@ -1,5 +1,6 @@
 
 import numpy as np
+from scipy.ndimage.measurements import label
 
 
 ############ Functions ############
@@ -47,22 +48,47 @@ def get_search_windows(
     nx_windows = np.int((xspan - nx_buffer) / nx_pix_per_step)
     ny_windows = np.int((yspan - ny_buffer) / ny_pix_per_step)
 
-    # Initialize a list to append window positions to
     window_list = []
-    # Loop through finding x and y window positions
-    # Note: you could vectorize this step, but in practice
-    # you'll be considering windows one by one with your
-    # classifier, so looping makes sense
     for ys in range(ny_windows):
         for xs in range(nx_windows):
-            # Calculate window position
             startx = xs * nx_pix_per_step + x_start_stop[0]
-            endx = startx + xy_window[0]
+            #endx = startx + xy_window[0]
             starty = ys * ny_pix_per_step + y_start_stop[0]
-            endy = starty + xy_window[1]
-
-            # Append window position to list
+            #endy = starty + xy_window[1]
             window_list.append((startx, starty))
 
-    # Return the list of windows
     return window_list
+
+
+############# Classes #############
+
+
+class HeatMap:
+    # Constructs a new heat map
+    def __init__(self, image_size):
+        self.map = np.zeros(image_size, dtype=np.float32)
+
+    # Adds heat
+    def add_heat(self, bboxes, size=(64, 64), amount=0.05):
+        for bbox in bboxes:
+            p1 = (bbox[0] - size[0] // 2, bbox[1] - size[1] // 2)
+            p2 = (bbox[0] + size[0] // 2, bbox[1] + size[1] // 2)
+            self.map[p1[1]:p2[1], p1[0]:p2[0]] += amount*3
+            #for gradient in range(6, 10, 2):
+            #    dw = int(size[0] / gradient)
+            #    dh = int(size[1] / gradient)
+            #    self.map[p1[1]+dw:p2[1]-dw, p1[0]+dh:p2[0]-dh] += amount
+
+    # Cools down heat map
+    def cool_down(self, amount=0.1, factor=0.75):
+        self.map -= amount
+        self.map = np.maximum(self.map, 0.0)
+        self.map *= factor
+
+    # Apply threshold
+    def apply_threshold(self, threshold=0.2):
+        self.map[self.map < threshold] = 0.0
+
+    def get_labels(self):
+        return label(self.map)
+

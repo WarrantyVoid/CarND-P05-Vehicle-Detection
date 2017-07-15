@@ -6,7 +6,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from moviepy.editor import VideoFileClip
-from scipy.ndimage.measurements import label
 import sklearn.svm as svm
 from sklearn.model_selection import GridSearchCV
 from sklearn.utils import shuffle
@@ -18,19 +17,10 @@ import feature_extraction as feat
 import window_search as wins
 import visualization as draw
 import os
+import lane_detection
 
 
 ############ Functions ############
-
-
-# Extracts features from a list of image file
-def extract_all_features(image_files, color_space, feature_extractors):
-    features = []
-    for image_file in image_files:
-        image = feat.read_image(image_file, color_space)
-        file_features = extract_features(image, feature_extractors)
-        features.append(file_features)
-    return features
 
 
 # Search a given list of windows using classifier
@@ -45,32 +35,23 @@ def search_windows(image, windows, classifier, scaler, feature_extractors):
     return on_windows
 
 
-# Extacts features from a single image
-def extract_features(image, windows, feature_extractors):
+# Extracts features from a single image
+def extract_features(image, feature_extractors):
     img_features = []
     for extractor in feature_extractors:
         img_features.append(extractor.get_features(image))
     return np.concatenate(img_features)
 
 
-# Cools down heat map
-def cool_down(heatmap):
-    heatmap //= 2
-    return heatmap
+# Extracts features from a list of image file
+def extract_all_features(image_files, color_space, feature_extractors):
+    features = []
+    for image_file in image_files:
+        image = feat.read_image(image_file, color_space)
+        file_features = extract_features(image, feature_extractors)
+        features.append(file_features)
+    return features
 
-# Adds heat
-def add_heat(heatmap, bboxes, size=(64, 64), amount=10):
-    for bbox in bboxes:
-        p1 = (bbox[0] - size[0] // 2, bbox[1] - size[1] // 2)
-        p2 = (bbox[0] + size[0] // 2, bbox[1] + size[1] // 2)
-        heatmap[p1[1]:p2[1], p1[0]:p2[0]] += amount
-    return heatmap
-
-
-# Apply threshold
-def apply_threshold(heatmap, threshold=10):
-    heatmap[heatmap <= threshold] = 0
-    return heatmap
 
 # Loads classifier
 def load_classifier(file_name):
@@ -89,15 +70,17 @@ def save_classifier(file_name, classifier, scaler):
 
 # Represents a lane line processor for images
 class ImageProcessor:
+
     # Constructs the processor with given image/frame size
-    def __init__(self, camera_calibration, image_size, color_space, classifier, scaler, feature_extractors):
-        self.camera_calibration = camera_calibration
+    def __init__(self, camera_calibration, image_size, color_space, classifier, scaler, feature_extractors, img=None):
+        self.subprocessor = lane_detection.ImageProcessor(camera_calibration, image_size, 0.375)
         self.image_size = image_size
         self.color_space = color_space
         self.classifier = classifier
         self.scaler = scaler
         self.feature_extractors = feature_extractors
-        self.levels = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+        self.heat_map = wins.HeatMap(image_size)
+        self.levels = [0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
         self.level_colors = [
             (255, 255, 255),
             (255, 255, 0),
@@ -108,33 +91,39 @@ class ImageProcessor:
             (0, 255, 255),
             (0, 255, 0)]
         self.windows = []
-        self.heatmap = np.zeros(image_size, dtype=np.uint8)
+
+        # Calculate window list
         for i in range(len(self.levels)):
             level_size = (int(np.round(image_size[0] * self.levels[i])), int(np.round(image_size[1] * self.levels[i])))
-            level_y = int(np.round(level_size[0] * (1.0 - 0.35 - 0.1 * self.levels[i])))
+            level_x = int(np.round(level_size[1] * (0.2 * self.levels[i] - 0.06)))
+            level_y = int(np.round(level_size[0] * (1.0 - 0.4 - 0.1 * self.levels[i])))
+            level_y2 = int(np.round(level_size[0] * (1.2 - 0.7 * self.levels[i])))
             windows = wins.get_search_windows(
                 level_size,
-                [None, None],
-                [level_y, level_y + 64],
+                [level_x, level_size[1] - level_x],
+                [level_y, level_y2],
                 (64, 64),
-                (0.875, 0.875))
+                (0.75, 0.75))
             self.windows.append(windows)
-        #for i in range(len(self.windows)):
-        #    scale = 1.0/self.levels[i]
-        #    w = wins.get_window_centers(self.windows[i], scale=scale)
-        #    img = draw.draw_boxes(img, w, size=(int(64*scale), int(64*scale)), color=self.level_colors[i], thick=2)
-        #plt.imshow(img)
-        #plt.show()
+        if img is not None:
+            for i in range(len(self.windows)):
+                scale = 1.0/self.levels[i]
+                w = wins.get_window_centers(self.windows[i], scale=scale)
+                img = draw.draw_boxes(img, w, size=(int(64*scale), int(64*scale)), color=self.level_colors[i], thick=2)
+            plt.imshow(img)
+            plt.show()
+
 
     # Implements the car marking pipeline
     def pipeline(self, img):
         # Require defined image size
         assert img.shape == self.image_size
 
-        self.heatmap = cool_down(self.heatmap)
+        # Cool down heat map
+        self.heat_map.cool_down(0.1, 0.75)
 
-        # Undistort
-        img = cam_calibration.undistort(img)
+        # Undistort & detect lanes
+        img = self.subprocessor.pipeline(img)
 
         # Match cars
         match_img = feat.convert_image(img, self.color_space)
@@ -147,12 +136,12 @@ class ImageProcessor:
         # Draw
         for i in range(len(self.windows)):
             scale = 1.0 / self.levels[i]
-            img = draw.draw_boxes(img, result_windows[i], size=(int(64*scale), int(64*scale)), color=self.level_colors[i], thick=2)
-            self.heatmap = add_heat(self.heatmap, result_windows[i], size=(int(64*scale), int(64*scale)))
+            #img = draw.draw_boxes(img, result_windows[i], size=(int(64*scale), int(64*scale)), color=self.level_colors[i], thick=2)
+            self.heat_map.add_heat(result_windows[i], size=(int(64*scale), int(64*scale)), amount=0.05)
 
-        self.heatmap = apply_threshold(self.heatmap)
-        labels = label(self.heatmap)
-        img = draw.draw_labeled_bboxes(img, labels, thick=6)
+        self.heat_map.apply_threshold(0.2)
+        labels = self.heat_map.get_labels()
+        img = draw.draw_labeled_bboxes(img, labels, color=(0, 100, 255), thick=4)
         return img
 
 
@@ -204,7 +193,7 @@ if __name__ == '__main__':
 
         # Train
         print("Training..")
-        parameters = {'kernel': ['rbf'], 'C': [1], 'max_iter': [1000]}#, 'gamma': [0.06, 0.07, 0.08, 0.09, 0.1]}
+        parameters = {'kernel': ['rbf']}#, 'C': [0.7, 0.75, 0.8], 'max_iter': [1000], 'gamma': [0.975, 0.1, 0.125]}
         svr = svm.SVC()
         clf = GridSearchCV(svr, parameters, n_jobs=4)
         t = time.time()
@@ -217,16 +206,17 @@ if __name__ == '__main__':
         save_classifier('classifier.p', clf, X_scaler)
 
 
-    # Pipeline for single picture
+    # Pipeline for pictures
     '''
-    rgb = feat.read_image('test_images/test6.jpg', color_space='RGB')
-    processor = ImageProcessor(cam_calibration, rgb.shape, cspace, clf, X_scaler, used_extractors, rgb)
-    t = time.time()
-    rgb = processor.pipeline(rgb)
-    print('Prediction time: ', round(time.time() - t, 2))
-    plt.imshow(rgb)
-    plt.show()
-
+    for img_file in glob.glob('test_images/*.jpg'):
+        rgb = feat.read_image(img_file, color_space='RGB')
+        processor = ImageProcessor(cam_calibration, rgb.shape, cspace, clf, X_scaler, used_extractors)
+        t = time.time()
+        rgb = processor.pipeline(rgb)
+        mpimg.imsave('output_images/{}'.format(os.path.basename(img_file)), rgb, format='jpg')
+        print('Prediction time: ', round(time.time() - t, 2))
+        #plt.imshow(rgb, cmap='magma')
+        #plt.show()
     '''
     # Pipeline for video
     clip = VideoFileClip('test_videos/project_video.mp4')
@@ -234,4 +224,3 @@ if __name__ == '__main__':
     new_clip = clip.fl_image(lambda frame: processor.pipeline(frame))
     new_clip_output = 'output_videos/project_video.mp4'
     new_clip.write_videofile(new_clip_output, audio=False)
-

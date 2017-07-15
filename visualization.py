@@ -8,7 +8,7 @@ from mpl_toolkits.mplot3d import Axes3D
 ############ Functions ############
 
 
-# Define a function to draw bounding boxes
+# Draws a bounding box given center point and size
 def draw_boxes(img, box_centers, size=(64, 64), color=(0, 0, 255), thick=2):
     imcopy = np.copy(img)
     for center in box_centers:
@@ -21,16 +21,21 @@ def draw_boxes(img, box_centers, size=(64, 64), color=(0, 0, 255), thick=2):
     return imcopy
 
 
-# Draw boxes based on given labels
+# Draw label boxes based on given labels
 def draw_labeled_bboxes(img, labels, color=(0, 0, 255), thick=2):
     for bbox in range(1, labels[1] + 1):
         nonzero = (labels[0] == bbox).nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
-        bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
-        cv2.rectangle(img, bbox[0], bbox[1], color, thick)
-    # Return the image
+        b = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+        cv2.rectangle(img, b[0], b[1], color, thick)
+        x = b[0][0]
+        y = b[0][1]
+        cv2.fillPoly(img, np.array([[(x, y), (x+100, y), (x+90, y+20), (x, y+20)]]), color)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(img, "car {:02}".format(bbox), (x + 5, y + 15), font, 0.75, (255, 255, 255), 1, cv2.LINE_AA)
     return img
+
 
 # Plots image pixels in 3d color space
 def plot3d(pixels, colors_rgb, axis_labels=list("RGB"), axis_limits=[(0, 255), (0, 255), (0, 255)]):
