@@ -158,7 +158,7 @@ if __name__ == '__main__':
     used_extractors = [hog_extract]
     cspace = 'YUV'
 
-    clf, X_scaler = load_classifier('classifier.p')
+    clf, X_scaler = load_classifier('data/trained_classifier.p')
     if clf is not None and X_scaler is not None:
         print("Classifier loaded.")
     else:
@@ -203,7 +203,7 @@ if __name__ == '__main__':
         print('Test accuracy: ', clf.score(X_test, y_test))
         print('Test predicts: ', clf.predict(X_test[0:10]))
         print('For labels   : ', y_test[0:10])
-        save_classifier('classifier.p', clf, X_scaler)
+        save_classifier('data/trained_classifier.p', clf, X_scaler)
 
 
     # Pipeline for pictures
