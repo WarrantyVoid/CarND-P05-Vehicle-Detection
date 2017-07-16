@@ -62,7 +62,6 @@ def plot3d(pixels, colors_rgb, axis_labels=list("RGB"), axis_limits=[(0, 255), (
         c=colors_rgb.reshape((-1, 3)), edgecolors='none')
     return ax
 
-
 ############ Main logic ###########
 
 
@@ -71,7 +70,6 @@ if __name__ == '__main__':
     import feature_extraction as feat
     rgb = feat.read_image('data/cars/GTI_Right/image0003.png', 'RGB')
 
-    '''
     rh, gh, bh, bincen, feature_vec = feat.HistogramFeatureExtractor().get_features(rgb, vis=True)
 
     # Plot a figure with all three bar charts
@@ -116,15 +114,36 @@ if __name__ == '__main__':
     plt.plot(feature_vec)
     plt.title('Spatially Binned Features')
     plt.show()
-    '''
 
+    rgb = feat.convert_image(rgb, 'YUV')
+    f, ax = plt.subplots(2, 3, figsize=(15, 10), frameon=False)
+    f.subplots_adjust(hspace=0.15, wspace=0.00, left=0, bottom=0, right=1, top=0.97)
     feat_ex = feat.HogFeatureExtractor(orientation=11, pix_per_cell=16, cells_per_block=2, hog_channel=0)
-    feature_vec = feat_ex.get_all_features(rgb[:, :, 0], [(0, 0)])
-    print(feature_vec)
-    feature_vec, vis_img = feat_ex.get_features(rgb, vis=True)
-    print()
-    print()
-    print(feature_vec)
-    plt.imshow(vis_img)
+    v, vis_img = feat_ex.get_features(rgb, vis=True)
+    ax[0, 0].set_title('Y channel')
+    ax[0, 0].axis('off')
+    ax[0, 0].imshow(rgb[:, :, 0], cmap="gray")
     plt.title('HOG Features')
+    ax[1, 0].set_title('Y HOG')
+    ax[1, 0].axis('off')
+    ax[1, 0].imshow(vis_img, cmap="gray")
+
+    feat_ex.hog_channel = 1
+    _, vis_img = feat_ex.get_features(rgb, vis=True)
+    ax[0, 1].set_title('U channel')
+    ax[0, 1].axis('off')
+    ax[0, 1].imshow(rgb[:, :, 1], cmap="gray")
+    ax[1, 1].set_title('U HOG')
+    ax[1, 1].axis('off')
+    ax[1, 1].imshow(vis_img, cmap="gray")
+
+    feat_ex.hog_channel = 2
+    _, vis_img = feat_ex.get_features(rgb, vis=True)
+    ax[0, 2].set_title('V channel')
+    ax[0, 2].axis('off')
+    ax[0, 2].imshow(rgb[:, :, 2], cmap="gray")
+    ax[1, 2].set_title('')
+    ax[1, 2].axis('off')
+    ax[1, 2].imshow(vis_img, cmap="gray")
+
     plt.show()

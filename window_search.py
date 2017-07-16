@@ -16,7 +16,24 @@ def get_window_centers(windows, size=(64, 64), scale=1.0):
     return window_centers
 
 
-# Calculates a list of search windows
+# Calculates a two-dimensional list of car search windows based on a list of desired scales
+def get_car_search_windows(image_size, levels):
+    windows_list = []
+    for i in range(len(levels)):
+        level_size = (int(np.round(image_size[0] * levels[i])), int(np.round(image_size[1] * levels[i])))
+        level_y1 = int(np.round(level_size[0] * (1.0 - 0.4 - 0.1 * levels[i])))
+        level_y2 = int(np.round(level_size[0] * (1.2 - 0.7 * levels[i])))
+        windows = get_search_windows(
+            level_size,
+            [None, None],
+            [level_y1, level_y2],
+            (64, 64),
+            (0.75, 0.75))
+        windows_list.append(windows)
+    return windows_list
+
+
+# Calculates a list of search windows based on given range and overlap
 def get_search_windows(
         image_size,
         x_start_stop=[None, None],
@@ -66,27 +83,45 @@ def get_search_windows(
 class HeatMap:
     # Constructs a new heat map
     def __init__(self, image_size):
-        self.map = np.zeros(image_size, dtype=np.float32)
+        self.history = []
+        self.map = np.zeros((image_size[0], image_size[1]), np.float32)
+
+    # Adds low-pass filter to heat
+    def filter_heat(self, heatmap, window_size=10):
+        # Append x values
+        self.history.append(heatmap)
+
+        # Enforce history size
+        if len(self.history) > window_size:
+            self.history.pop(0)
+
+        # Calculate mean based on history
+        mean_map = np.zeros(self.map.shape)
+        mean_count = 0
+        for map in self.history:
+            if map is not None:
+                mean_map += map
+                mean_count += 1
+        mean_map /= mean_count
+        return mean_map
 
     # Adds heat
-    def add_heat(self, bboxes, size=(64, 64), amount=0.05):
+    def add_heat(self, bboxes, size, amount):
         for bbox in bboxes:
             p1 = (bbox[0] - size[0] // 2, bbox[1] - size[1] // 2)
             p2 = (bbox[0] + size[0] // 2, bbox[1] + size[1] // 2)
-            self.map[p1[1]:p2[1], p1[0]:p2[0]] += amount*3
+            self.map[p1[1]:p2[1], p1[0]:p2[0]] += 3*amount
             #for gradient in range(6, 10, 2):
             #    dw = int(size[0] / gradient)
             #    dh = int(size[1] / gradient)
             #    self.map[p1[1]+dw:p2[1]-dw, p1[0]+dh:p2[0]-dh] += amount
-
-    # Cools down heat map
-    def cool_down(self, amount=0.1, factor=0.75):
-        self.map -= amount
-        self.map = np.maximum(self.map, 0.0)
-        self.map *= factor
+        self.map = self.filter_heat(self.map)
 
     # Apply threshold
-    def apply_threshold(self, threshold=0.2):
+    def apply_threshold(self, threshold):
+        max_heat = np.max(self.map)
+        if max_heat > 0.0:
+            self.map /= max_heat
         self.map[self.map < threshold] = 0.0
 
     def get_labels(self):

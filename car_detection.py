@@ -80,7 +80,7 @@ class ImageProcessor:
         self.scaler = scaler
         self.feature_extractors = feature_extractors
         self.heat_map = wins.HeatMap(image_size)
-        self.levels = [0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+        self.levels = [0.7, 0.6, 0.5, 0.4, 0.3]
         self.level_colors = [
             (255, 255, 255),
             (255, 255, 0),
@@ -90,37 +90,23 @@ class ImageProcessor:
             (0, 0, 255),
             (0, 255, 255),
             (0, 255, 0)]
-        self.windows = []
-
-        # Calculate window list
-        for i in range(len(self.levels)):
-            level_size = (int(np.round(image_size[0] * self.levels[i])), int(np.round(image_size[1] * self.levels[i])))
-            level_x = int(np.round(level_size[1] * (0.2 * self.levels[i] - 0.06)))
-            level_y = int(np.round(level_size[0] * (1.0 - 0.4 - 0.1 * self.levels[i])))
-            level_y2 = int(np.round(level_size[0] * (1.2 - 0.7 * self.levels[i])))
-            windows = wins.get_search_windows(
-                level_size,
-                [level_x, level_size[1] - level_x],
-                [level_y, level_y2],
-                (64, 64),
-                (0.75, 0.75))
-            self.windows.append(windows)
+        self.windows = wins.get_car_search_windows(image_size, self.levels)
         if img is not None:
             for i in range(len(self.windows)):
                 scale = 1.0/self.levels[i]
-                w = wins.get_window_centers(self.windows[i], scale=scale)
+                w = wins.get_window_centers(self.windows[i], size=(64, 64), scale=scale)
                 img = draw.draw_boxes(img, w, size=(int(64*scale), int(64*scale)), color=self.level_colors[i], thick=2)
             plt.imshow(img)
             plt.show()
+        self.frame = 0
 
 
     # Implements the car marking pipeline
     def pipeline(self, img):
+        self.frame += 1
+
         # Require defined image size
         assert img.shape == self.image_size
-
-        # Cool down heat map
-        self.heat_map.cool_down(0.1, 0.75)
 
         # Undistort & detect lanes
         img = self.subprocessor.pipeline(img)
@@ -129,19 +115,38 @@ class ImageProcessor:
         match_img = feat.convert_image(img, self.color_space)
         result_windows = []
         for i in range(len(self.levels)):
-            scaled = cv2.resize(match_img, (0, 0), fx=self.levels[i], fy=self.levels[i]) if i > 0 else match_img
+            scaled = cv2.resize(match_img, (0, 0), fx=self.levels[i], fy=self.levels[i])
             on_windows = search_windows(scaled, self.windows[i], self.classifier, self.scaler, self.feature_extractors)
             result_windows.append(wins.get_window_centers(on_windows, scale=1.0/self.levels[i]))
 
-        # Draw
-        for i in range(len(self.windows)):
+        # Add heat
+        for i in range(len(self.levels)):
             scale = 1.0 / self.levels[i]
-            #img = draw.draw_boxes(img, result_windows[i], size=(int(64*scale), int(64*scale)), color=self.level_colors[i], thick=2)
             self.heat_map.add_heat(result_windows[i], size=(int(64*scale), int(64*scale)), amount=0.05)
-
+            #img = draw.draw_boxes(img, result_windows[i], size=(int(64 * scale), int(64 * scale)), color=self.level_colors[i], thick=2)
         self.heat_map.apply_threshold(0.2)
+
+        # Get labels and draw boxes
         labels = self.heat_map.get_labels()
         img = draw.draw_labeled_bboxes(img, labels, color=(0, 100, 255), thick=4)
+
+        ''' Generates pictures write writeup
+        f, ax = plt.subplots(1, 2, figsize=(10, 3.5), frameon=False)
+        f.subplots_adjust(hspace=0.15, wspace=0.00, left=0, bottom=0, right=1, top=0.97)
+        ax[0].set_title('Frame {:02}'.format(self.frame))
+        ax[0].axis('off')
+        ax[0].imshow(img)
+        ax[1].set_title('Labels {:02}'.format(self.frame))
+        ax[1].axis('off')
+        #ax[1].imshow(self.heat_map.map, cmap="magma")
+        #ax[1].imshow(labels[0], cmap="gray")
+        #plt.show()
+        f.canvas.draw()
+        data = np.fromstring(f.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        data = data.reshape(f.canvas.get_width_height()[::-1] + (3,))
+        return data
+        '''
+
         return img
 
 
@@ -205,9 +210,8 @@ if __name__ == '__main__':
         print('For labels   : ', y_test[0:10])
         save_classifier('data/trained_classifier.p', clf, X_scaler)
 
-
-    # Pipeline for pictures
     '''
+    # Pipeline for pictures
     for img_file in glob.glob('test_images/*.jpg'):
         rgb = feat.read_image(img_file, color_space='RGB')
         processor = ImageProcessor(cam_calibration, rgb.shape, cspace, clf, X_scaler, used_extractors)
@@ -222,5 +226,4 @@ if __name__ == '__main__':
     clip = VideoFileClip('test_videos/project_video.mp4')
     processor = ImageProcessor(cam_calibration, (clip.h, clip.w, 3), cspace, clf, X_scaler, used_extractors)
     new_clip = clip.fl_image(lambda frame: processor.pipeline(frame))
-    new_clip_output = 'output_videos/project_video.mp4'
-    new_clip.write_videofile(new_clip_output, audio=False)
+    new_clip.write_videofile('output_videos/project_video.mp4', audio=False)
