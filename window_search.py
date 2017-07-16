@@ -115,13 +115,13 @@ class HeatMap:
             #    dw = int(size[0] / gradient)
             #    dh = int(size[1] / gradient)
             #    self.map[p1[1]+dw:p2[1]-dw, p1[0]+dh:p2[0]-dh] += amount
-        self.map = self.filter_heat(self.map)
 
     # Apply threshold
     def apply_threshold(self, threshold):
         max_heat = np.max(self.map)
         if max_heat > 0.0:
             self.map /= max_heat
+        self.map = self.filter_heat(self.map)
         self.map[self.map < threshold] = 0.0
 
     def get_labels(self):

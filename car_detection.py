@@ -227,3 +227,4 @@ if __name__ == '__main__':
     processor = ImageProcessor(cam_calibration, (clip.h, clip.w, 3), cspace, clf, X_scaler, used_extractors)
     new_clip = clip.fl_image(lambda frame: processor.pipeline(frame))
     new_clip.write_videofile('output_videos/project_video.mp4', audio=False)
+
