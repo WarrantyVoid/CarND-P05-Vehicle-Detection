@@ -166,5 +166,25 @@ And last but not least here are the bounding boxes overlaid on the last frame of
 
 ####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
+#####Implementation issues
+There main issue during implementation was the performance of the algorithm. Even though I made compromises regarding the number of scales and the window overlap and even though I used `cv2.HogDescriptor` to calculate the HOGs only once for each scale, the algorithm is still taking about 1s per frame which makes it unsuited for real time applications. Maybe using single channel HOG and further reducing the window count and overlap would have helped.
 
+#####Weak points
+Situations in which the algorithm will struggle:
+* Partially visible/covered vehicle (e.g. parking vehicles)
+* Vehicles in unlearnt angles (front view, side view)
+* Unlearnt vehicle shapes (e.g. trucks, beatles)
 
+Right now, there are a lot of images in the data set which refer to the very same car occurance. In order to improve the situation, the data set could be extended by more different car models, car colors and car angles.
+
+One missing point in the solution is also the capability to track individual cars. E.g. in the current implementation, the labels flip when the black and white car pass each other. An extended solution could calculate something like a feature signature from the HOG inside the matching windows of each individually detected car. These signatures could be tracked and updated over successive frames and be stored inside a "surrounding car" short-term memory. Given also the trajectory for each vehicle, this would allow to even track vehicles while hidden behind obstacles.
+
+Another weak point is the missing depth perception and the incapability to generate tight 3-dimensional bounding boxes. I have no idea how to improve this though other than using additional input devices.
+
+Other another note, this method of vehicle detection seems to have some similarity to an inception type neural network:
+* The search windows on different scales remind me of parallel convolutions with different kernel sizes
+* The calculation of the gradient directions could be seen as a special type of non-linearity
+* The strongest orientation histogram binning is similar to max pooling
+* The SVM would represent the classifier layer
+ 
+ 
