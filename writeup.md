@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+
+##Writeup Template
+>>>>>>> 0cdadc4f8903c6b032c0da61379fd98e6f8d6db8
 
 ## Writeup Template
 
