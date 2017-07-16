@@ -1,6 +1,7 @@
-##Writeup Template
 
-###Vehicle Detection Project
+## Writeup Template
+
+### Vehicle Detection Project
 
 The goals / steps of this project are the following:
 
@@ -25,19 +26,20 @@ The goals / steps of this project are the following:
 [image11]: ./examples/output_bboxes.png
 [video12]: ./project_video.mp4
 
-###Rubric Points
+### Rubric Points
 Here I will consider the [rubric points](https://review.udacity.com/#!/rubrics/513/view) individually and describe how I addressed each point in my implementation.  
 
 ---
-###Writeup / README
+
+### Writeup / README
 
 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Vehicle-Detection/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
 
 You're reading it!
 
-###Histogram of Oriented Gradients (HOG)
+### Histogram of Oriented Gradients (HOG)
 
-####1. Explain how you extracted HOG features from the training images.
+#### 1. Explain how you extracted HOG features from the training images.
 
 The code for this step is contained in the module `feature_extraction.py`. The module contains one class for each feature extraction method:
 * SpatialFeatureExtractor
@@ -63,30 +65,30 @@ Here is an example using the `YUV` color space and HOG parameters of `orientatio
 
 ![YUV HOG for not car][image3]
 
-####2. Explain how you settled on your final choice of HOG parameters.
+#### 2. Explain how you settled on your final choice of HOG parameters.
 
 I tried various combinations of parameters and compared the validation accuracy of the classifier as well as the visual performance on the test image set. 
 
-#####Color channels
+##### Color channels
 I did not make any good experiences with adding plain color histogram or spatial bin features into the equation - both features seem to be vastly inferior to HOGs. I did however notice a significant improve in detection performance if the HOGs are calculated over all images channels. The decision to use HOG over all channels also makes the choice of the color space less relevant. If chosen only one channel, the Y channel of YUV space delivers the best detection performance with 98.5% in precision and only sparse false positives in a few video frames. It makes sense, when looking at sample pictures in 3D color space:
  
  For YUV ,the pixel cloud is strongly aligned to the Y axis, while in RGB space, the pixel cloud is less directed and diagonal to the axes.
 
 ![YUV HOG for not car][image4]
 
-#####Orientation bin counts
+##### Orientation bin counts
 The orientation bin counts from 9 to 11 both performed very well (~99,2% accuracy on test set and no false positives on test images). With 8 bins or fewer, the accuracy of detecting begins to fall as the car edge directions became not distinctive enough. For orientation bin sizes larger than 11, the detection performance stay constant till about 15 and then slightly decreases as bin size grows larger. The reason for the quite large bin size window is probably the capability of the hog implementation which also takes weighted directions from neighbouring bins into account.
 
-#####OpenCV parameters
+##### OpenCV parameters
 The OpenCV HOG implementation is one of the worst documented interfaces I have ever encountered. It is e.g. important to set parameter `_winSigma` to `-1` or else OpenCv will apply a gaussian filter to the image before calculating the HOG which will have a significant negative impact in the detection performance. Also `_gamma_correction` has to be set to `true` unless the image has been normalized manually beforehand. `_blockStride` should be set to half of block size. Without these adjustments, the OpenCV HOG descriptor will deliver worse detection performance than the according skimage hog. Regardless of HOG implementation used, the best block normalization method is 'L2Hys' as is also supported in the [video by Navneet Dalal](https://www.youtube.com/watch?v=7S5qXET179I):
 
 ![HOG normalization][image5]
 
 
-#####Block size & cell size
+##### Block size & cell size
 I was unable to test the parameters (6x6 cell size, 3x3 block size) that Navneet Dalal used for his person recognition implementation, because this did exceed the available RAM on my machine. Regardless, I think, these parameters would have not worked well. He relates the test results with cell size to the width of limbs/arms of persons, but that unit is quite uninteresting for our car detection. I settled for a much larger cell size (16x16) and accordingly for a smaller block size (2x2). Some OpenCV documentation also seems to claim that 16x16 is would be the only supported cell size, but this is not true (I tried different sizes successfully). 16x16 seems to perform better than 8x8, although details like the outline of the license plate are lost. The explanation is, that the gradients still cover the outline of the car and allow for better generalization. The block size does not seem to play such an important role for our vehicles, as the algorithm reaches about the same detection precision even with just one global block (4x4).
 
-####3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
+#### 3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
 
 The classifier training code is located in the main section of the main module `vehicle_detection.py`. I used `sklearn.model_selection.GridSearchCV` to find the optimal parameters for training the SVM and it turned out the output of the rbf kernel was slightly better than the linear kernel. I also tried to find out the best parameters for `C`, `gamma` and `max_iter` parameters using the grid search, but it turned out that the default parameters were just fine and tweaks to them just led to "improvements" just within normal precision variance (~0.2%). 
 
@@ -102,9 +104,9 @@ What I did not do:
 After the training, I persisted the SVM as well as the scale class, so new images and videos could be predicted without going through another long training process. 
 
 
-###Sliding Window Search
+### Sliding Window Search
 
-####1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
+#### 1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
 
 The code for the sliding window search is located in the module `window_search.py` within the functions
 * `get_car_search_windows()`
@@ -122,7 +124,7 @@ The windows of the different scales are aligned in such a way, that only the are
 In total, there a six scales with windows. Translated to 1.0 scale, the windows look like following:
 ![Sliding windows][image7]
 
-####2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
+#### 2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
 
 Ultimately I searched on five scales using all YUV channel HOG features, which provided a very nice result. But as my classifier detected the white car only with view windows, I decided to add 9 white car samples of varying sizes and offsets from the test images into the training data set. 
 
@@ -133,11 +135,11 @@ Here are some example images with the classifier that was trained on that slight
 
 ### Video Implementation
 
-####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
+#### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
 Here's a [link to my video result](./output_videos/project_video.mp4)
 
 
-####2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
+#### 2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
 
 
 I recorded the positions of positive detections in each frame of the video.  From the positive detections I created a heat map and then thresholded that map to identify vehicle positions.  
@@ -162,14 +164,14 @@ And last but not least here are the bounding boxes overlaid on the last frame of
 
 ---
 
-###Discussion
+### Discussion
 
-####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
+#### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-#####Implementation issues
+##### Implementation issues
 There main issue during implementation was the performance of the algorithm. Even though I made compromises regarding the number of scales and the window overlap and even though I used `cv2.HogDescriptor` to calculate the HOGs only once for each scale, the algorithm is still taking about 1s per frame which makes it unsuited for real time applications. Maybe using single channel HOG and further reducing the window count and overlap would have helped.
 
-#####Weak points
+##### Weak points
 Situations in which the algorithm will struggle:
 * Partially visible/covered vehicle (e.g. parking vehicles)
 * Vehicles in unlearnt angles (front view, side view)
